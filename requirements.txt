@@ -1,0 +1,24 @@
+# Core dependencies
+numpy>=2.0.0
+matplotlib>=3.10.0
+pillow>=11.0.0
+python-dotenv>=1.0.0
+
+# GUI
+tk>=0.1.0
+
+# Computer Vision
+opencv-contrib-python>=4.11.0
+
+# Machine Learning
+tensorflow>=2.19.0
+keras>=3.9.0
+scikit-learn>=1.6.0
+h5py>=3.13.0
+
+# Natural Language Processing
+nltk>=3.9.0
+vaderSentiment>=3.3.2
+
+# Utilities
+pandas>=2.2.0

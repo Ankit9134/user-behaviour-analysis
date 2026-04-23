@@ -1,0 +1,103 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env
+.venv
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.spyderproject
+.spyproject
+.ropeproject
+.DS_Store
+
+# Project specific
+*.log
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.model
+*.weights
+*.pb
+*.onnx
+*.tflite
+*.pt
+*.pth
+*.bin
+*.json
+!package.json
+!package-lock.json
+
+# Exclude specific model files that should be tracked
+!Face_Emotion_Recognition/facialemotionmodel.h5
+!Face_Emotion_Recognition/facialemotionmodel.json
+
+# Exclude specific data files that should be tracked
+!Sentiment_Analysis/emotions.txt
+
+# Temporary files
+temp/
+tmp/
+.temp/
+.tmp/
+
+# Generated files
+graph.png
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+
+# OS specific
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
