@@ -15,7 +15,7 @@ flask>=3.0.0
 opencv-contrib-python>=4.11.0
 
 # Machine Learning
-tensorflow>=2.19.0
+tensorflow>=2.16.1
 keras>=3.9.0
 scikit-learn>=1.6.0
 h5py>=3.13.0
