@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Face Emotion Recognition</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <style>
+    /* Model status badge */
+    .model-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 50px;
+      font-size: .75rem; font-weight: 600; letter-spacing: .4px;
+    }
+    .model-badge .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+    }
+    .badge-loading { background: rgba(243,156,18,.15); color: #f39c12; border: 1px solid rgba(243,156,18,.3); }
+    .badge-ready   { background: rgba(46,204,113,.15);  color: #2ecc71; border: 1px solid rgba(46,204,113,.3); }
+    .badge-error   { background: rgba(231,76,60,.15);   color: #e74c3c; border: 1px solid rgba(231,76,60,.3); }
+    .badge-loading .dot { background:#f39c12; animation: blink 1s infinite; }
+    .badge-ready   .dot { background:#2ecc71; box-shadow: 0 0 6px #2ecc71; }
+    .badge-error   .dot { background:#e74c3c; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* Confidence ring */
+    .conf-wrap {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 10px 0 4px;
+    }
+    .conf-ring {
+      position: relative; width: 80px; height: 80px;
+    }
+    .conf-ring svg { transform: rotate(-90deg); }
+    .conf-ring .track { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 7; }
+    .conf-ring .fill  { fill: none; stroke-width: 7; stroke-linecap: round;
+                        transition: stroke-dashoffset .6s ease, stroke .4s; }
+    .conf-ring .label {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .95rem; font-weight: 800; color: var(--text);
+    }
+    .conf-title { font-size: .72rem; color: var(--muted); margin-top: 6px;
+                  text-transform: uppercase; letter-spacing: .8px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>😊 Face Emotion Recognition</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span id="modelBadge" class="model-badge badge-loading">
+      <span class="dot"></span> Loading Model…
+    </span>
+    <a href="/" class="btn btn-danger" id="menuBtn">← Main Menu</a>
+  </div>
+</header>
+
+<main>
+  <div class="emotion-layout">
+
+    <!-- Left: Video -->
+    <div class="card video-card">
+      <div class="card-title">📷 &nbsp;Live Camera Feed</div>
+
+      <div id="video-placeholder">
+        <div class="ph-icon">📷</div>
+        <span>Camera not started</span>
+        <span style="font-size:.78rem;opacity:.6">Press Start Camera to begin</span>
+      </div>
+      <img id="video-feed" src="" alt="Camera Feed"/>
+
+      <div class="ctrl-row">
+        <button class="btn btn-success" id="startBtn" onclick="startCamera()">▶ &nbsp;Start Camera</button>
+        <button class="btn btn-gray"    onclick="resetStats()">↺ &nbsp;Reset Stats</button>
+        <a href="/" class="btn btn-danger" id="menuBtn2">← &nbsp;Main Menu</a>
+      </div>
+    </div>
+
+    <!-- Right: Stats -->
+    <div class="right-panel">
+
+      <!-- Current Emotion + Confidence -->
+      <div class="card emotion-badge-card">
+        <div class="label">Current Emotion</div>
+        <span class="emoji" id="currentEmoji">🤔</span>
+        <div class="value" id="currentEmotion">Waiting…</div>
+
+        <div class="conf-wrap">
+          <div class="conf-ring">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <circle class="track" cx="40" cy="40" r="33"/>
+              <circle class="fill"  cx="40" cy="40" r="33"
+                id="confArc"
+                stroke="#6c63ff"
+                stroke-dasharray="207.3"
+                stroke-dashoffset="207.3"/>
+            </svg>
+            <div class="label" id="confPct">0%</div>
+          </div>
+          <div class="conf-title">Confidence</div>
+        </div>
+      </div>
+
+      <!-- Emotion Stats -->
+      <div class="card" style="flex:1;overflow-y:auto">
+        <div class="card-title">📊 &nbsp;Emotion Statistics</div>
+        <div id="totalCount" style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">
+          Total detections: 0
+        </div>
+        <div class="stats-list" id="statsList">
+          <div style="color:var(--muted);font-size:.85rem;text-align:center;padding:20px 0;">
+            Start camera to see live stats
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<footer id="statusBar">Ready — Press Start Camera to begin</footer>
+
+<script>
+const COLORS = {
+  angry:'#e74c3c', disgust:'#8e44ad', fear:'#f39c12',
+  happy:'#2ecc71', neutral:'#3498db', sad:'#95a5a6', surprise:'#1abc9c'
+};
+const EMOJIS = {
+  angry:'😠', disgust:'🤢', fear:'😨',
+  happy:'😄', neutral:'😐', sad:'😢', surprise:'😲'
+};
+const CIRC = 207.3; // 2 * π * 33
+
+let statsInterval = null;
+let modelInterval = null;
+let running = false;
+
+// ── Poll model status until ready ──────────────────────────────────────────
+function pollModelStatus() {
+  modelInterval = setInterval(async () => {
+    const res  = await fetch('/api/model/status');
+    const data = await res.json();
+    updateModelBadge(data.status, data.error);
+    if (data.status === 'ready' || data.status === 'error') {
+      clearInterval(modelInterval);
+    }
+  }, 1500);
+}
+
+function updateModelBadge(status, err) {
+  const badge = document.getElementById('modelBadge');
+  if (status === 'loading') {
+    badge.className = 'model-badge badge-loading';
+    badge.innerHTML = '<span class="dot"></span> Loading Model…';
+  } else if (status === 'ready') {
+    badge.className = 'model-badge badge-ready';
+    badge.innerHTML = '<span class="dot"></span> Model Ready';
+  } else if (status === 'error') {
+    badge.className = 'model-badge badge-error';
+    badge.innerHTML = `<span class="dot"></span> Model Error`;
+    document.getElementById('statusBar').textContent = '⚠️ Model error: ' + err;
+  }
+}
+
+// ── Camera controls ────────────────────────────────────────────────────────
+async function startCamera() {
+  const res  = await fetch('/api/camera/start', { method: 'POST' });
+  const data = await res.json();
+  if (data.error) { showToast('❌ ' + data.error); return; }
+
+  running = true;
+  document.getElementById('video-placeholder').style.display = 'none';
+  const feed = document.getElementById('video-feed');
+  feed.src   = '/api/camera/feed';
+  feed.style.display = 'block';
+
+  const btn = document.getElementById('startBtn');
+  btn.innerHTML = '⏹ &nbsp;Stop Camera';
+  btn.className = 'btn btn-danger';
+  btn.onclick   = stopCamera;
+
+  document.getElementById('statusBar').textContent = '🟢 Camera active — detecting emotions…';
+  statsInterval = setInterval(fetchStats, 700);
+}
+
+async function stopCamera() {
+  await fetch('/api/camera/stop', { method: 'POST' });
+  _resetUI();
+}
+
+function _resetUI() {
+  running = false;
+  clearInterval(statsInterval);
+
+  document.getElementById('video-feed').style.display = 'none';
+  document.getElementById('video-placeholder').style.display = 'flex';
+
+  const btn = document.getElementById('startBtn');
+  btn.innerHTML = '▶ &nbsp;Start Camera';
+  btn.className = 'btn btn-success';
+  btn.onclick   = startCamera;
+
+  document.getElementById('statusBar').textContent      = 'Camera stopped.';
+  document.getElementById('currentEmotion').textContent = 'Waiting…';
+  document.getElementById('currentEmotion').style.color = 'var(--accent)';
+  document.getElementById('currentEmoji').textContent   = '🤔';
+  setConfidence(0, 'var(--accent)');
+  document.getElementById('totalCount').textContent = 'Total detections: 0';
+  document.getElementById('statsList').innerHTML =
+    '<div style="color:var(--muted);font-size:.85rem;text-align:center;padding:20px 0;">Start camera to see live stats</div>';
+}
+
+// ── Stats fetch ────────────────────────────────────────────────────────────
+async function fetchStats() {
+  try {
+    const res  = await fetch('/api/camera/stats');
+    const data = await res.json();
+
+    // Current emotion
+    const emo   = data.emotion;
+    const color = COLORS[emo] || 'var(--accent)';
+    const el    = document.getElementById('currentEmotion');
+    el.textContent = emo.charAt(0).toUpperCase() + emo.slice(1);
+    el.style.color = color;
+    el.className   = emo !== 'No face detected' ? 'value emotion-active' : 'value';
+    document.getElementById('currentEmoji').textContent = EMOJIS[emo] || '🤔';
+
+    // Confidence ring
+    setConfidence(data.confidence || 0, color);
+
+    // Stats list
+    const counts = data.counts;
+    const total  = data.total || 0;
+    document.getElementById('totalCount').textContent = `Total detections: ${total}`;
+
+    const list = document.getElementById('statsList');
+    if (total === 0) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:.85rem;text-align:center;padding:20px 0;">No detections yet…</div>';
+      return;
+    }
+
+    list.innerHTML = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([e, c]) => {
+        const pct = total ? (c / total * 100).toFixed(1) : 0;
+        return `
+        <div class="stat-item">
+          <div class="stat-dot" style="background:${COLORS[e]};box-shadow:0 0 5px ${COLORS[e]}"></div>
+          <span class="stat-name">${EMOJIS[e] || ''} ${e}</span>
+          <div class="stat-bar-wrap">
+            <div class="stat-mini-bar" style="width:${pct}%;background:${COLORS[e]};opacity:.75"></div>
+          </div>
+          <span class="stat-count">${c}<span style="opacity:.45;font-weight:400"> (${pct}%)</span></span>
+        </div>`;
+      }).join('');
+
+  } catch(e) { /* ignore during stop */ }
+}
+
+function setConfidence(pct, color) {
+  const offset = CIRC - (CIRC * pct / 100);
+  const arc    = document.getElementById('confArc');
+  arc.style.strokeDashoffset = offset;
+  arc.style.stroke           = color;
+  document.getElementById('confPct').textContent = pct > 0 ? pct + '%' : '—';
+}
+
+// ── Reset stats ────────────────────────────────────────────────────────────
+async function resetStats() {
+  const wasRunning = running;
+  await fetch('/api/camera/stop', { method: 'POST' });
+  running = false;
+  clearInterval(statsInterval);
+  if (wasRunning) {
+    await fetch('/api/camera/start', { method: 'POST' });
+    running = true;
+    statsInterval = setInterval(fetchStats, 700);
+  }
+  document.getElementById('totalCount').textContent = 'Total detections: 0';
+  document.getElementById('statsList').innerHTML =
+    '<div style="color:var(--muted);font-size:.85rem;text-align:center;padding:20px 0;">Stats reset ✓</div>';
+  document.getElementById('statusBar').textContent = 'Statistics reset.';
+  setConfidence(0, 'var(--accent)');
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  Object.assign(t.style, {
+    position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)',
+    background:'rgba(231,76,60,0.92)', color:'#fff', padding:'10px 22px',
+    borderRadius:'50px', fontSize:'.88rem', fontWeight:'600',
+    backdropFilter:'blur(10px)', zIndex:'999'
+  });
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ── Nav guards ─────────────────────────────────────────────────────────────
+async function navAway(e) {
+  e.preventDefault();
+  if (running) await fetch('/api/camera/stop', { method: 'POST' });
+  location.href = '/';
+}
+document.getElementById('menuBtn').addEventListener('click',  navAway);
+document.getElementById('menuBtn2').addEventListener('click', navAway);
+window.addEventListener('beforeunload', () => {
+  if (running) fetch('/api/camera/stop', { method: 'POST' });
+});
+
+// Start polling model status on page load
+pollModelStatus();
+</script>
+
+</body>
+</html>

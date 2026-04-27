@@ -6,6 +6,10 @@ python-dotenv>=1.0.0
 
 # GUI
 tk>=0.1.0
+customtkinter>=5.2.0
+
+# Web
+flask>=3.0.0
 
 # Computer Vision
 opencv-contrib-python>=4.11.0

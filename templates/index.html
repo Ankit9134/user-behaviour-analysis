@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Project Hub</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+
+<header>
+  <h1>User Behavior Analytics</h1>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="hero-badge">✦ Powered by AI</div>
+    <h2>Welcome to User Behavior Analytics</h2>
+    <p>Select a project below to explore cutting-edge AI capabilities</p>
+  </div>
+
+  <div class="project-grid">
+
+    <div class="project-card" onclick="location.href='/emotion'">
+      <div class="icon-wrap icon-green">😊</div>
+      <div class="tag">Computer Vision · Real-time</div>
+      <h3>Face Emotion Recognition</h3>
+      <p>Detect and classify human emotions in real-time using your webcam powered by deep learning.</p>
+      <a href="/emotion" class="btn btn-success">Launch →</a>
+    </div>
+
+    <div class="project-card" onclick="location.href='/sentiment'">
+      <div class="icon-wrap icon-blue">💬</div>
+      <div class="tag">NLP · VADER Analysis</div>
+      <h3>Sentiment Analysis</h3>
+      <p>Analyze the emotional tone and sentiment of any text using natural language processing.</p>
+      <a href="/sentiment" class="btn btn-primary">Launch →</a>
+    </div>
+
+  </div>
+</main>
+
+<footer>Ready to launch a project</footer>
+
+</body>
+</html>

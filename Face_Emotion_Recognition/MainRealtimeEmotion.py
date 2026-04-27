@@ -2,298 +2,183 @@ import os
 import warnings
 import cv2
 import numpy as np
-import tkinter as tk
+import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 import threading
 import time
 import sys
 
-# Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-# Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = config.TF_CPP_MIN_LOG_LEVEL
 warnings.filterwarnings('ignore', category=UserWarning)
 
-from tensorflow import keras  # Or from keras.models import load_model
+from tensorflow import keras
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-class HoverButton(tk.Button):
-    """Button that changes appearance on hover"""
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
-        self.default_bg = self["bg"]
-        self.default_fg = self["fg"]
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-
-        # Add 3D effect with border
-        self.config(relief=tk.RAISED, borderwidth=2)
-
-    def _on_enter(self, _):
-        """Mouse entered the button"""
-        r, g, b = self.master.winfo_rgb(self.default_bg)
-        hover_bg = f'#{min(int(r/256) + 30, 255):02x}{min(int(g/256) + 30, 255):02x}{min(int(b/256) + 30, 255):02x}'
-        self.config(bg=hover_bg, cursor="hand2")
-
-    def _on_leave(self, _):
-        """Mouse left the button"""
-        self.config(bg=self.default_bg)
 
 class FaceEmotionRecognitionApp:
     def __init__(self, root):
         self.root = root
-
-        # Initialize variables
         self.webcam = None
         self.is_running = False
         self.thread = None
         self.current_frame = None
-        self.emotion_counts = {emotion: 0 for emotion in ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']}
+        self.emotion_counts = {e: 0 for e in ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']}
         self.emotion_colors = config.EMOTION_COLORS
-
-        # Emotion labels
         self.labels = {0: 'angry', 1: 'disgust', 2: 'fear', 3: 'happy', 4: 'neutral', 5: 'sad', 6: 'surprise'}
 
-        # Setup the UI
-        self.setup_ui()
-
-        # Load face cascade
+        self._build_ui()
         haar_file = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.face_cascade = cv2.CascadeClassifier(haar_file)
-
-        # Bind window close event
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self._center_window()
+        self._load_model()
 
-        # Center window
-        self.center_window()
-
-        # Load the model (do this last as it might take time)
-        self.load_model()
-
-    def setup_ui(self):
-        # Set window properties
+    def _build_ui(self):
         self.root.title("Face Emotion Recognition")
         self.root.geometry(config.WINDOW_SIZE)
 
-        # Set color scheme from config
-        self.bg_color = config.BG_COLOR
-        self.text_color = config.TEXT_COLOR
-        self.accent_color = config.ACCENT_COLOR
+        # ── Header ──────────────────────────────────────────────
+        header = ctk.CTkFrame(self.root, fg_color=config.ACCENT_COLOR, corner_radius=0, height=64)
+        header.pack(fill="x")
+        header.pack_propagate(False)
 
-        self.root.configure(bg=self.bg_color)
+        ctk.CTkLabel(
+            header, text="😊  Face Emotion Recognition",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color="white"
+        ).pack(side="left", padx=24)
 
-        # Create header
-        header_frame = tk.Frame(self.root, bg=self.accent_color, height=60)
-        header_frame.pack(fill="x")
-
-        title_label = tk.Label(
-            header_frame,
-            text="Face Emotion Recognition",
-            font=("Helvetica", 20, "bold"),
-            bg=self.accent_color,
-            fg="white",
-            pady=10
-        )
-        title_label.pack(side=tk.LEFT, padx=20)
-
-        # Add close button to header
-        close_button = HoverButton(
-            header_frame,
-            text="Return to Main Menu",
-            font=("Helvetica", 10, "bold"),
-            bg=config.DANGER_BTN_COLOR,
-            fg="white",
-            padx=10,
-            pady=5,
+        ctk.CTkButton(
+            header, text="Return to Main Menu", width=180,
+            fg_color=config.DANGER_BTN_COLOR, hover_color="#c0392b",
             command=self.on_closing
-        )
-        close_button.pack(side=tk.RIGHT, padx=20, pady=10)
+        ).pack(side="right", padx=24, pady=12)
 
-        # Create main content frame with two columns
-        content_frame = tk.Frame(self.root, bg=self.bg_color)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        # ── Body ────────────────────────────────────────────────
+        body = ctk.CTkFrame(self.root, fg_color=config.BG_COLOR, corner_radius=0)
+        body.pack(fill="both", expand=True, padx=20, pady=12)
 
-        # Left column for video feed
-        left_frame = tk.Frame(content_frame, bg=self.bg_color)
-        left_frame.pack(side=tk.LEFT, fill="both", expand=True)
+        # Left: video feed
+        left = ctk.CTkFrame(body, fg_color="transparent")
+        left.pack(side="left", fill="both", expand=True)
 
-        # Video feed frame
-        video_frame = tk.LabelFrame(
-            left_frame,
-            text="Camera Feed",
-            font=("Helvetica", 12, "bold"),
-            bg=self.bg_color,
-            fg=self.text_color,
-            padx=10,
-            pady=10
-        )
-        video_frame.pack(fill="both", expand=True, pady=10)
+        video_card = ctk.CTkFrame(left, fg_color=config.CARD_BG, corner_radius=10)
+        video_card.pack(fill="both", expand=True, pady=(0, 10))
 
-        # Video canvas
-        self.video_canvas = tk.Canvas(
-            video_frame,
-            bg="black",
-            width=640,
-            height=480
-        )
-        self.video_canvas.pack(fill="both", expand=True)
+        ctk.CTkLabel(video_card, text="Camera Feed",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=config.TEXT_COLOR).pack(anchor="w", padx=12, pady=(8, 4))
 
-        # Control panel
-        control_frame = tk.Frame(left_frame, bg=self.bg_color)
-        control_frame.pack(fill="x", pady=10)
+        self.video_canvas = ctk.CTkCanvas(video_card, bg="black", width=640, height=460,
+                                          highlightthickness=0)
+        self.video_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # Start button
-        self.start_button = HoverButton(
-            control_frame,
-            text="Start Camera",
-            font=("Helvetica", 12, "bold"),
-            bg=config.SUCCESS_BTN_COLOR,
-            fg="white",
-            padx=15,
-            pady=5,
+        # Controls
+        ctrl = ctk.CTkFrame(left, fg_color="transparent")
+        ctrl.pack(fill="x")
+
+        self.start_btn = ctk.CTkButton(
+            ctrl, text="▶  Start Camera", width=160,
+            fg_color=config.SUCCESS_BTN_COLOR, hover_color="#1e8449",
+            font=ctk.CTkFont(size=13, weight="bold"),
             command=self.toggle_camera
         )
-        self.start_button.pack(side=tk.LEFT, padx=5)
+        self.start_btn.pack(side="left", padx=(0, 8))
 
-        # Removed snapshot button
-
-        # Reset button
-        self.reset_button = HoverButton(
-            control_frame,
-            text="Reset Stats",
-            font=("Helvetica", 12),
-            bg=config.NEUTRAL_BTN_COLOR,
-            fg="white",
-            padx=15,
-            pady=5,
+        ctk.CTkButton(
+            ctrl, text="Reset Stats", width=120,
+            fg_color=config.NEUTRAL_BTN_COLOR, hover_color="#636e72",
             command=self.reset_stats
-        )
-        self.reset_button.pack(side=tk.LEFT, padx=5)
+        ).pack(side="left", padx=(0, 8))
 
-        # Return to Main Menu button
-        self.return_button = HoverButton(
-            control_frame,
-            text="Return to Main Menu",
-            font=("Helvetica", 12),
-            bg=config.DANGER_BTN_COLOR,
-            fg="white",
-            padx=15,
-            pady=5,
+        ctk.CTkButton(
+            ctrl, text="Return to Main Menu", width=180,
+            fg_color=config.DANGER_BTN_COLOR, hover_color="#c0392b",
             command=self.on_closing
-        )
-        self.return_button.pack(side=tk.LEFT, padx=5)
+        ).pack(side="left")
 
-        # Right column for stats and controls
-        right_frame = tk.Frame(content_frame, bg=self.bg_color, width=400)
-        right_frame.pack(side=tk.RIGHT, fill="both", padx=(20, 0))
+        # Right: stats
+        right = ctk.CTkFrame(body, fg_color="transparent", width=360)
+        right.pack(side="right", fill="both", padx=(16, 0))
+        right.pack_propagate(False)
 
-        # Stats frame
-        stats_frame = tk.LabelFrame(
-            right_frame,
-            text="Emotion Statistics",
-            font=("Helvetica", 12, "bold"),
-            bg=self.bg_color,
-            fg=self.text_color,
-            padx=10,
-            pady=10
-        )
-        stats_frame.pack(fill="both", expand=True, pady=10)
+        stats_card = ctk.CTkFrame(right, fg_color=config.CARD_BG, corner_radius=10)
+        stats_card.pack(fill="both", expand=True, pady=(0, 10))
 
-        # Create matplotlib figure for the pie chart
-        self.fig = Figure(figsize=(5, 4), dpi=100)
+        ctk.CTkLabel(stats_card, text="Emotion Statistics",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=config.TEXT_COLOR).pack(anchor="w", padx=12, pady=(8, 4))
+
+        self.fig = Figure(figsize=(3.6, 3.2), dpi=100)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=stats_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.fig.set_facecolor(config.BG_COLOR)
+        self.chart_canvas = FigureCanvasTkAgg(self.fig, master=stats_card)
+        self.chart_canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self._update_pie()
 
-        # Initialize empty pie chart
-        self.update_pie_chart()
+        emotion_card = ctk.CTkFrame(right, fg_color=config.CARD_BG, corner_radius=10)
+        emotion_card.pack(fill="x")
 
-        # Current emotion frame
-        current_emotion_frame = tk.LabelFrame(
-            right_frame,
-            text="Current Emotion",
-            font=("Helvetica", 12, "bold"),
-            bg=self.bg_color,
-            fg=self.text_color,
-            padx=10,
-            pady=10
+        ctk.CTkLabel(emotion_card, text="Current Emotion",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=config.TEXT_COLOR).pack(anchor="w", padx=12, pady=(8, 2))
+
+        self.emotion_label = ctk.CTkLabel(
+            emotion_card, text="No face detected",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=config.TEXT_COLOR
         )
-        current_emotion_frame.pack(fill="x", pady=10)
+        self.emotion_label.pack(pady=(4, 12))
 
-        self.current_emotion_label = tk.Label(
-            current_emotion_frame,
-            text="No face detected",
-            font=("Helvetica", 16, "bold"),
-            bg=self.bg_color,
-            fg=self.text_color,
-            pady=10
+        # ── Status bar ──────────────────────────────────────────
+        footer = ctk.CTkFrame(self.root, fg_color=config.CARD_BG, corner_radius=0, height=36)
+        footer.pack(fill="x", side="bottom")
+        footer.pack_propagate(False)
+        self.status_label = ctk.CTkLabel(
+            footer, text="Ready. Press 'Start Camera' to begin.",
+            font=ctk.CTkFont(size=11), text_color=config.TEXT_COLOR
         )
-        self.current_emotion_label.pack()
+        self.status_label.pack(side="left", padx=14)
 
-        # Status bar
-        status_frame = tk.Frame(self.root, bg=config.CARD_BG, height=30)
-        status_frame.pack(fill="x", side=tk.BOTTOM)
-
-        self.status_label = tk.Label(
-            status_frame,
-            text="Ready. Press 'Start Camera' to begin.",
-            font=("Helvetica", 10),
-            bg=config.CARD_BG,
-            fg=self.text_color,
-            pady=5
-        )
-        self.status_label.pack(side=tk.LEFT, padx=10)
-
-    def center_window(self):
-        """Center the window on the screen"""
+    def _center_window(self):
         self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        w, h = self.root.winfo_width(), self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() - w) // 2
+        y = (self.root.winfo_screenheight() - h) // 2
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
 
-    def load_model(self):
-        """Load the emotion recognition model"""
+    def _load_model(self):
         try:
-            model_path = config.FACE_EMOTION_MODEL_H5
-            self.model = keras.models.load_model(model_path)
-            self.status_label.config(text="Model loaded successfully from .h5 file.")
+            self.model = keras.models.load_model(config.FACE_EMOTION_MODEL_H5)
+            self.status_label.configure(text="Model loaded successfully.")
         except Exception as e:
-            self.status_label.config(text=f"Error loading model from .h5: {e}")
+            self.status_label.configure(text=f"Error loading model: {e}")
             try:
-                json_path = config.FACE_EMOTION_MODEL_JSON
-                with open(json_path, "r") as json_file:
-                    model_json = json_file.read()
-                self.model = keras.models.model_from_json(model_json)
-                self.model.load_weights(model_path)
-                self.status_label.config(text="Model loaded successfully from JSON and weights.")
-            except FileNotFoundError as fe:
-                messagebox.showerror("Error", f"Error loading model files: {fe}")
-                self.root.destroy()
+                with open(config.FACE_EMOTION_MODEL_JSON) as f:
+                    self.model = keras.models.model_from_json(f.read())
+                self.model.load_weights(config.FACE_EMOTION_MODEL_H5)
+                self.status_label.configure(text="Model loaded from JSON.")
             except Exception as e2:
-                messagebox.showerror("Error", f"Error loading model architecture or weights: {e2}")
+                messagebox.showerror("Error", f"Cannot load model: {e2}")
                 self.root.destroy()
 
-    def extract_features(self, image):
-        """Extract features from the image for model prediction"""
-        feature = np.array(image)
-        feature = feature.reshape(1, 48, 48, 1)
-        return feature / 255.0
+    def _extract_features(self, image):
+        return np.array(image).reshape(1, 48, 48, 1) / 255.0
 
     def toggle_camera(self):
-        """Start or stop the camera feed"""
         if self.is_running:
             self.is_running = False
-            self.start_button.config(text="Start Camera", bg=config.SUCCESS_BTN_COLOR)
-            self.start_button.default_bg = config.SUCCESS_BTN_COLOR  # Update default_bg for HoverButton
-            self.status_label.config(text="Camera stopped.")
-            if self.webcam is not None:
+            self.start_btn.configure(text="▶  Start Camera", fg_color=config.SUCCESS_BTN_COLOR)
+            self.status_label.configure(text="Camera stopped.")
+            if self.webcam:
                 self.webcam.release()
                 self.webcam = None
         else:
@@ -301,183 +186,99 @@ class FaceEmotionRecognitionApp:
             if not self.webcam.isOpened():
                 messagebox.showerror("Error", "Could not open webcam.")
                 return
-
             self.is_running = True
-            self.start_button.config(text="Stop Camera", bg=config.DANGER_BTN_COLOR)
-            self.start_button.default_bg = config.DANGER_BTN_COLOR  # Update default_bg for HoverButton
-            self.status_label.config(text="Camera started. Detecting emotions...")
-
-            # Start video processing in a separate thread
-            self.thread = threading.Thread(target=self.process_video)
-            self.thread.daemon = True
+            self.start_btn.configure(text="⏹  Stop Camera", fg_color=config.DANGER_BTN_COLOR)
+            self.status_label.configure(text="Camera started. Detecting emotions…")
+            self.thread = threading.Thread(target=self._process_video, daemon=True)
             self.thread.start()
 
-    def process_video(self):
-        """Process video frames in a separate thread"""
+    def _process_video(self):
         while self.is_running:
-            success, frame = self.webcam.read()
-            if not success:
-                self.status_label.config(text="Error: Could not read frame from webcam.")
+            ok, frame = self.webcam.read()
+            if not ok:
+                self.status_label.configure(text="Error reading frame.")
                 break
-
-            # Process the frame
-            self.process_frame(frame)
-
-            # Small delay to reduce CPU usage
+            self._process_frame(frame)
             time.sleep(0.01)
 
-    def process_frame(self, frame):
-        """Process a single frame for emotion detection"""
-        # Convert to RGB for display
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # Convert to grayscale for face detection
+    def _process_frame(self, frame):
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # Detect faces
         faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
-
-        # Store current emotion for display
-        current_emotion = "No face detected"
+        current = "No face detected"
 
         try:
             for (x, y, w, h) in faces:
-                # Extract face region
-                face_roi = gray[y:y + h, x:x + w].copy()
+                roi = cv2.resize(gray[y:y+h, x:x+w], (48, 48))
+                pred = self.model.predict(self._extract_features(roi))
+                label = self.labels[np.argmax(pred)]
+                self.emotion_counts[label] += 1
+                current = label
 
-                # Resize for the model
-                resized_face = cv2.resize(face_roi, (48, 48))
+                hex_c = self.emotion_colors.get(label, "#FFFFFF")
+                r, g, b = (int(hex_c[i:i+2], 16) for i in (1, 3, 5))
+                cv2.rectangle(rgb, (x, y), (x+w, y+h), (r, g, b), 2)
+                cv2.putText(rgb, label, (x, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (r, g, b), 2)
 
-                # Extract features
-                img = self.extract_features(resized_face)
+            color = self.emotion_colors.get(current, config.TEXT_COLOR)
+            self.emotion_label.configure(text=current.capitalize(), text_color=color)
 
-                # Predict emotion
-                pred = self.model.predict(img)
-                predicted_label_index = np.argmax(pred)
-                prediction_label = self.labels[predicted_label_index]
-
-                # Update emotion counts
-                self.emotion_counts[prediction_label] += 1
-
-                # Get color for the emotion
-                emotion_color = self.emotion_colors.get(prediction_label, "#FFFFFF")
-
-                # Convert hex color to BGR
-                r, g, b = tuple(int(emotion_color[i:i+2], 16) for i in (1, 3, 5))
-                color_bgr = (b, g, r)
-
-                # Draw rectangle and label
-                cv2.rectangle(frame_rgb, (x, y), (x + w, y + h), color_bgr, 2)
-                cv2.putText(frame_rgb, prediction_label, (x, y - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, color_bgr, 2)
-
-                # Update current emotion
-                current_emotion = prediction_label
-
-            # Update the current emotion label
-            self.current_emotion_label.config(text=current_emotion.capitalize())
-
-            # If an emotion was detected, update its color
-            if current_emotion in self.emotion_colors:
-                self.current_emotion_label.config(fg=self.emotion_colors[current_emotion])
-            else:
-                self.current_emotion_label.config(fg=self.text_color)
-
-            # Update the pie chart every 10 frames (to avoid excessive updates)
-            if sum(self.emotion_counts.values()) % 10 == 0 and sum(self.emotion_counts.values()) > 0:
-                self.update_pie_chart()
+            total = sum(self.emotion_counts.values())
+            if total % 10 == 0 and total > 0:
+                self._update_pie()
 
         except Exception as e:
-            print(f"An error occurred during prediction: {e}")
+            print(f"Prediction error: {e}")
 
-        # Convert to PhotoImage for display
-        h, w = frame_rgb.shape[:2]
-        self.current_frame = frame_rgb.copy()  # Store for snapshot
+        self.current_frame = rgb.copy()
+        cw = self.video_canvas.winfo_width()
+        ch = self.video_canvas.winfo_height()
 
-        # Resize if needed to fit the canvas
-        canvas_width = self.video_canvas.winfo_width()
-        canvas_height = self.video_canvas.winfo_height()
+        if cw > 1 and ch > 1:
+            ih, iw = rgb.shape[:2]
+            scale = min(cw / iw, ch / ih)
+            rgb = cv2.resize(rgb, (int(iw * scale), int(ih * scale)))
 
-        if canvas_width > 1 and canvas_height > 1:  # Ensure canvas has been drawn
-            # Calculate aspect ratio
-            img_ratio = w / h
-            canvas_ratio = canvas_width / canvas_height
-
-            if img_ratio > canvas_ratio:
-                # Image is wider than canvas
-                new_width = canvas_width
-                new_height = int(canvas_width / img_ratio)
-            else:
-                # Image is taller than canvas
-                new_height = canvas_height
-                new_width = int(canvas_height * img_ratio)
-
-            frame_rgb = cv2.resize(frame_rgb, (new_width, new_height))
-
-        # Convert to PhotoImage
-        img = Image.fromarray(frame_rgb)
+        img = Image.fromarray(rgb)
         imgtk = ImageTk.PhotoImage(image=img)
+        self.video_canvas.create_image(cw // 2, ch // 2, image=imgtk, anchor="center")
+        self.video_canvas.image = imgtk
 
-        # Update the canvas
-        self.video_canvas.create_image(
-            canvas_width // 2, canvas_height // 2,
-            image=imgtk, anchor=tk.CENTER
-        )
-        self.video_canvas.image = imgtk  # Keep a reference
-
-    def update_pie_chart(self):
-        """Update the emotion statistics pie chart"""
-        # Clear the previous chart
+    def _update_pie(self):
         self.ax.clear()
-
-        # Get data for the pie chart
-        labels = []
-        sizes = []
-        colors = []
-
         total = sum(self.emotion_counts.values())
-
         if total > 0:
-            for emotion, count in self.emotion_counts.items():
-                if count > 0:
-                    labels.append(f"{emotion} ({count})")
-                    sizes.append(count)
-                    colors.append(self.emotion_colors[emotion])
-
-            # Create pie chart
-            self.ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
-                       shadow=True, startangle=90)
-            self.ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+            data = {e: c for e, c in self.emotion_counts.items() if c > 0}
+            self.ax.pie(
+                data.values(),
+                labels=[f"{e} ({c})" for e, c in data.items()],
+                colors=[self.emotion_colors[e] for e in data],
+                autopct='%1.1f%%', startangle=90, textprops={'color': config.TEXT_COLOR}
+            )
+            self.ax.axis('equal')
         else:
-            # If no data, show empty chart with message
-            self.ax.text(0.5, 0.5, 'No data yet', horizontalalignment='center',
-                        verticalalignment='center', transform=self.ax.transAxes)
+            self.ax.text(0.5, 0.5, 'No data yet', ha='center', va='center',
+                         transform=self.ax.transAxes, color=config.TEXT_COLOR)
             self.ax.axis('off')
 
-        # Update the canvas
-        self.fig.set_facecolor(self.bg_color)
-        self.canvas.draw()
-
-    # Take snapshot method removed
+        self.fig.set_facecolor(config.BG_COLOR)
+        self.chart_canvas.draw()
 
     def reset_stats(self):
-        """Reset the emotion statistics"""
-        self.emotion_counts = {emotion: 0 for emotion in self.emotion_counts}
-        self.update_pie_chart()
-        self.status_label.config(text="Statistics reset.")
+        self.emotion_counts = {e: 0 for e in self.emotion_counts}
+        self._update_pie()
+        self.status_label.configure(text="Statistics reset.")
 
-    def on_closing(self, event=None):
-        """Handle window closing"""
+    def on_closing(self):
         self.is_running = False
-        if self.webcam is not None:
+        if self.webcam:
             self.webcam.release()
         self.root.destroy()
-        # Exit with a special code to signal return to main menu
-        import sys
         sys.exit(config.RETURN_TO_MENU_CODE)
 
-# Driver code
+
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     app = FaceEmotionRecognitionApp(root)
     root.mainloop()

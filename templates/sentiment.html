@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sentiment Analysis</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <style>
+    /* ── Face Card ───────────────────────────────────────────── */
+    .face-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 24px 16px;
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(16px);
+    }
+
+    .face-svg-wrap {
+      position: relative;
+      width: 150px;
+      height: 150px;
+    }
+    .face-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* Smooth SVG transitions */
+    #fc { transition: fill .55s ease, stroke .55s ease; }
+    #fm { transition: d .55s cubic-bezier(.4,0,.2,1); }
+    #fbl, #fbr { transition: d .45s cubic-bezier(.4,0,.2,1); }
+    #fel, #fer { transition: ry .4s ease, cy .4s ease; }
+
+    /* Glow ring behind face */
+    .face-glow-ring {
+      position: absolute;
+      inset: -10px;
+      border-radius: 50%;
+      transition: box-shadow .55s ease;
+      pointer-events: none;
+    }
+
+    .face-emotion-label {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+    }
+    .face-emotion-value {
+      font-size: 1.15rem;
+      font-weight: 800;
+      transition: color .4s ease;
+      text-align: center;
+    }
+
+    /* Bounce animation when face changes */
+    @keyframes facePop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.12); }
+      70%  { transform: scale(0.95); }
+      100% { transform: scale(1); }
+    }
+    .face-pop { animation: facePop .45s ease; }
+
+    /* ── Emotion chips ─────────────────────────────────────── */
+    .emotion-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 11px;
+      border-radius: 50px;
+      font-size: .76rem;
+      font-weight: 600;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      animation: fadeUp .3s ease;
+    }
+    .chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink:0; }
+    .chip-count { opacity: .55; font-size: .7rem; }
+
+    /* ── 3-col results grid ────────────────────────────────── */
+    .results-grid {
+      display: grid;
+      grid-template-columns: 190px 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 820px) {
+      .results-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>💬 Sentiment Analysis</h1>
+  <a href="/" class="btn btn-danger">← Main Menu</a>
+</header>
+
+<main>
+  <div class="sentiment-layout">
+
+    <!-- Input -->
+    <div class="card input-card">
+      <label for="textInput">✍️ &nbsp;Enter text to analyze</label>
+      <textarea id="textInput"
+        placeholder="Type or paste your text here… '"></textarea>
+    </div>
+
+    <!-- Buttons -->
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="analyze()">🔍 &nbsp;Analyze Sentiment</button>
+      <button class="btn btn-gray"    onclick="clearAll()">✖ &nbsp;Clear</button>
+    </div>
+
+    <!-- Results -->
+    <div class="card results-card" id="resultsCard">
+      <div class="card-title">📊 &nbsp;Analysis Results</div>
+
+      <div class="results-grid">
+
+        <!-- Col 1: Animated Face -->
+        <div class="face-card">
+          <div class="face-svg-wrap" id="faceSvgWrap">
+            <div class="face-glow-ring" id="faceGlowRing"></div>
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <!-- Head circle -->
+              <circle id="fc" cx="50" cy="50" r="44"
+                fill="#95a5a6" stroke="#7f8c8d" stroke-width="2.5"/>
+              <!-- Cheeks (blush) -->
+              <ellipse id="fck-l" cx="28" cy="58" rx="8" ry="5"
+                fill="rgba(255,150,150,0)" style="transition:fill .5s"/>
+              <ellipse id="fck-r" cx="72" cy="58" rx="8" ry="5"
+                fill="rgba(255,150,150,0)" style="transition:fill .5s"/>
+              <!-- Left eye -->
+              <ellipse id="fel" cx="35" cy="40" rx="5" ry="6" fill="#2c3e50"/>
+              <!-- Right eye -->
+              <ellipse id="fer" cx="65" cy="40" rx="5" ry="6" fill="#2c3e50"/>
+              <!-- Left pupil shine -->
+              <circle cx="33" cy="38" r="1.5" fill="white" opacity=".7"/>
+              <circle cx="63" cy="38" r="1.5" fill="white" opacity=".7"/>
+              <!-- Left eyebrow -->
+              <path id="fbl" d="M28,30 Q35,28 42,30"
+                fill="none" stroke="#2c3e50" stroke-width="2.5" stroke-linecap="round"/>
+              <!-- Right eyebrow -->
+              <path id="fbr" d="M58,30 Q65,28 72,30"
+                fill="none" stroke="#2c3e50" stroke-width="2.5" stroke-linecap="round"/>
+              <!-- Mouth -->
+              <path id="fm" d="M35,66 Q50,68 65,66"
+                fill="none" stroke="#2c3e50" stroke-width="3" stroke-linecap="round"/>
+              <!-- Sweat drop (hidden by default) -->
+              <ellipse id="fsweat" cx="78" cy="30" rx="3" ry="4.5"
+                fill="#7fb3d3" opacity="0" style="transition:opacity .4s"/>
+            </svg>
+          </div>
+          <div class="face-emotion-label">Detected Emotion</div>
+          <div class="face-emotion-value" id="faceEmotionValue" style="color:var(--muted)">—</div>
+        </div>
+
+        <!-- Col 2: Scores + Chips -->
+        <div>
+          <div class="score-row">
+            <span class="score-label">Overall Sentiment</span>
+            <span id="overallBadge" class="overall-badge">—</span>
+          </div>
+          <div class="score-row">
+            <span class="score-label">Positive</span>
+            <span class="score-value" id="posVal" style="color:var(--positive)">—</span>
+          </div>
+          <div class="score-row">
+            <span class="score-label">Neutral</span>
+            <span class="score-value" id="neuVal" style="color:var(--neutral)">—</span>
+          </div>
+          <div class="score-row">
+            <span class="score-label">Negative</span>
+            <span class="score-value" id="negVal" style="color:var(--negative)">—</span>
+          </div>
+          <div class="score-row">
+            <span class="score-label">Compound</span>
+            <span class="score-value" id="compVal" style="color:var(--accent)">—</span>
+          </div>
+
+          <div style="margin-top:16px">
+            <div class="card-title" style="margin-bottom:8px">Detected Emotions</div>
+            <div class="emotion-chips" id="emotionChips">
+              <span style="color:var(--muted);font-size:.82rem">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Col 3: Bar chart -->
+        <div>
+          <div class="card-title">Distribution</div>
+          <div class="bar-chart">
+            <div class="bar-item">
+              <div class="bar-item-label">
+                <span>😊 Positive</span><span id="posBar">0%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-pos" id="posBarFill"></div>
+              </div>
+            </div>
+            <div class="bar-item">
+              <div class="bar-item-label">
+                <span>😐 Neutral</span><span id="neuBar">0%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-neu" id="neuBarFill"></div>
+              </div>
+            </div>
+            <div class="bar-item">
+              <div class="bar-item-label">
+                <span>😞 Negative</span><span id="negBar">0%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill bar-neg" id="negBarFill"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer id="statusBar">Ready to analyze text sentiment</footer>
+
+<script>
+const FACES = {
+  // ── Very Happy / Excited ──────────────────────────────────
+  excited: {
+    fill:'#f5c842', stroke:'#d4a800', glow:'rgba(245,200,66,.55)',
+    mouth:'M28,64 Q50,84 72,64',
+    browL:'M28,28 Q35,23 42,28', browR:'M58,28 Q65,23 72,28',
+    eyeRy:7, eyeCy:40, cheek:'rgba(255,120,120,.25)', sweat:0,
+    label:'Very Happy 😄'
+  },
+  // ── Happy ─────────────────────────────────────────────────
+  happy: {
+    fill:'#f5c842', stroke:'#d4a800', glow:'rgba(245,200,66,.45)',
+    mouth:'M32,65 Q50,79 68,65',
+    browL:'M28,30 Q35,26 42,30', browR:'M58,30 Q65,26 72,30',
+    eyeRy:6, eyeCy:40, cheek:'rgba(255,120,120,.18)', sweat:0,
+    label:'Happy 😊'
+  },
+  // ── Sad / Disappointed ────────────────────────────────────
+  sad: {
+    fill:'#7fb3d3', stroke:'#4a90c4', glow:'rgba(127,179,211,.5)',
+    mouth:'M33,72 Q50,61 67,72',
+    browL:'M28,33 Q35,37 42,33', browR:'M58,33 Q65,37 72,33',
+    eyeRy:5, eyeCy:41, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Sad 😢'
+  },
+  // ── Angry / Frustrated ────────────────────────────────────
+  angry: {
+    fill:'#e74c3c', stroke:'#a93226', glow:'rgba(231,76,60,.55)',
+    mouth:'M32,71 Q50,61 68,71',
+    browL:'M27,35 Q35,27 43,33', browR:'M57,33 Q65,27 73,35',
+    eyeRy:5, eyeCy:41, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Angry 😠'
+  },
+  // ── Fearful / Anxious ─────────────────────────────────────
+  fearful: {
+    fill:'#f39c12', stroke:'#b7770d', glow:'rgba(243,156,18,.5)',
+    mouth:'M37,68 Q50,64 63,68',
+    browL:'M28,31 Q35,26 42,31', browR:'M58,31 Q65,26 72,31',
+    eyeRy:8, eyeCy:39, cheek:'rgba(0,0,0,0)', sweat:.9,
+    label:'Fearful 😨'
+  },
+  // ── Surprised ────────────────────────────────────────────
+  surprised: {
+    fill:'#9b59b6', stroke:'#6c3483', glow:'rgba(155,89,182,.5)',
+    mouth:'M40,62 Q50,76 60,62',
+    browL:'M28,27 Q35,21 42,27', browR:'M58,27 Q65,21 72,27',
+    eyeRy:9, eyeCy:38, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Surprised 😲'
+  },
+  // ── Disgusted ────────────────────────────────────────────
+  disgusted: {
+    fill:'#8e44ad', stroke:'#5b2c6f', glow:'rgba(142,68,173,.5)',
+    mouth:'M33,69 Q50,60 67,69',
+    browL:'M28,33 Q35,30 42,33', browR:'M58,33 Q65,30 72,33',
+    eyeRy:4, eyeCy:41, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Disgusted 🤢'
+  },
+  // ── Neutral ──────────────────────────────────────────────
+  neutral: {
+    fill:'#95a5a6', stroke:'#717d7e', glow:'rgba(149,165,166,.4)',
+    mouth:'M35,66 Q50,68 65,66',
+    browL:'M28,30 Q35,28 42,30', browR:'M58,30 Q65,28 72,30',
+    eyeRy:6, eyeCy:40, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Neutral 😐'
+  },
+  // ── Bored ────────────────────────────────────────────────
+  bored: {
+    fill:'#bdc3c7', stroke:'#95a5a6', glow:'rgba(189,195,199,.35)',
+    mouth:'M35,67 Q50,65 65,67',
+    browL:'M28,31 Q35,30 42,31', browR:'M58,31 Q65,30 72,31',
+    eyeRy:3, eyeCy:41, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Bored 😑'
+  },
+  // ── Loved ────────────────────────────────────────────────
+  loved: {
+    fill:'#e91e8c', stroke:'#ad1457', glow:'rgba(233,30,140,.5)',
+    mouth:'M30,64 Q50,80 70,64',
+    browL:'M28,29 Q35,25 42,29', browR:'M58,29 Q65,25 72,29',
+    eyeRy:6, eyeCy:40, cheek:'rgba(255,100,180,.3)', sweat:0,
+    label:'Loved 🥰'
+  },
+  // ── Fearless / Confident ─────────────────────────────────
+  fearless: {
+    fill:'#1abc9c', stroke:'#148f77', glow:'rgba(26,188,156,.5)',
+    mouth:'M32,65 Q50,78 68,65',
+    browL:'M28,30 Q35,26 42,30', browR:'M58,30 Q65,26 72,30',
+    eyeRy:6, eyeCy:40, cheek:'rgba(0,0,0,0)', sweat:0,
+    label:'Confident 😎'
+  }
+};
+
+/* ── Emotion category → face key ─────────────────────────── */
+const EMO_TO_FACE = {
+  happy:'happy', sad:'sad', angry:'angry', fearful:'fearful',
+  surprise:'surprised', disgusted:'disgusted', neutral:'neutral',
+  excited:'excited', bored:'bored', fearless:'fearless',
+  alone:'sad', loved:'loved', attached:'loved', free:'fearless',
+  adequate:'neutral', focused:'fearless', independent:'fearless',
+  powerless:'sad', belittled:'sad', demoralized:'sad',
+  cheated:'angry', hated:'sad', embarrassed:'fearful',
+  anxious:'fearful', lustful:'excited', obsessed:'excited',
+  apathetic:'bored', average:'neutral', esteemed:'happy',
+  codependent:'sad', safe:'happy', lost:'sad', derailed:'sad',
+  burdened:'angry', entitled:'angry', ecstatic:'excited',
+  singled:'sad', safe:'happy'
+};
+
+/* ── Chip colors ─────────────────────────────────────────── */
+const CHIP_COLOR = {
+  happy:'#f5c842', sad:'#7fb3d3', angry:'#e74c3c', fearful:'#f39c12',
+  surprise:'#9b59b6', disgusted:'#8e44ad', neutral:'#95a5a6',
+  excited:'#2ecc71', bored:'#bdc3c7', fearless:'#1abc9c',
+  alone:'#7fb3d3', loved:'#e91e8c', attached:'#e91e8c',
+  free:'#1abc9c', adequate:'#3498db', focused:'#3498db',
+  independent:'#1abc9c', powerless:'#e74c3c', belittled:'#e74c3c',
+  demoralized:'#e74c3c', cheated:'#e74c3c', hated:'#e74c3c',
+  embarrassed:'#f39c12', anxious:'#f39c12', lustful:'#e91e8c',
+  obsessed:'#9b59b6', apathetic:'#95a5a6', average:'#95a5a6',
+  esteemed:'#2ecc71', codependent:'#f39c12', safe:'#2ecc71',
+  lost:'#7fb3d3', derailed:'#e74c3c', burdened:'#f39c12',
+  entitled:'#e74c3c', ecstatic:'#2ecc71', singled:'#f39c12'
+};
+
+/* ── Apply face ──────────────────────────────────────────── */
+function applyFace(key) {
+  const f = FACES[key] || FACES.neutral;
+
+  document.getElementById('fc').setAttribute('fill',   f.fill);
+  document.getElementById('fc').setAttribute('stroke', f.stroke);
+  document.getElementById('fm').setAttribute('d',      f.mouth);
+  document.getElementById('fbl').setAttribute('d',     f.browL);
+  document.getElementById('fbr').setAttribute('d',     f.browR);
+  document.getElementById('fel').setAttribute('ry',    f.eyeRy);
+  document.getElementById('fer').setAttribute('ry',    f.eyeRy);
+  document.getElementById('fel').setAttribute('cy',    f.eyeCy);
+  document.getElementById('fer').setAttribute('cy',    f.eyeCy);
+  document.getElementById('fck-l').setAttribute('fill', f.cheek);
+  document.getElementById('fck-r').setAttribute('fill', f.cheek);
+  document.getElementById('fsweat').style.opacity = f.sweat;
+  document.getElementById('faceGlowRing').style.boxShadow = `0 0 30px 10px ${f.glow}`;
+
+  const val = document.getElementById('faceEmotionValue');
+  val.textContent = f.label;
+  val.style.color = f.stroke;
+
+  // Pop animation
+  const wrap = document.getElementById('faceSvgWrap');
+  wrap.classList.remove('face-pop');
+  void wrap.offsetWidth; // reflow
+  wrap.classList.add('face-pop');
+}
+
+/* ── Pick face from compound + NLTK emotions ─────────────── */
+function pickFace(compound, emos, topEmo) {
+  // 1. Strong compound → direct mapping
+  if (compound >= 0.7)  return 'excited';
+  if (compound >= 0.3)  return 'happy';
+  if (compound >= 0.05) return 'happy';
+  if (compound <= -0.7) {
+    // Check if angry-type emotions dominate
+    const angryScore = (emos.angry||0) + (emos.cheated||0) +
+                       (emos.burdened||0) + (emos.demoralized||0) +
+                       (emos.powerless||0) + (emos.hated||0);
+    const sadScore   = (emos.sad||0) + (emos.alone||0) +
+                       (emos.belittled||0) + (emos.lost||0);
+    return angryScore >= sadScore ? 'angry' : 'sad';
+  }
+  if (compound <= -0.3) return 'sad';
+  if (compound <= -0.05) return 'sad';
+
+  // 2. Neutral compound → use NLTK top emotion
+  if (topEmo && EMO_TO_FACE[topEmo]) return EMO_TO_FACE[topEmo];
+
+  // 3. Fallback: use highest scoring NLTK emotion
+  if (Object.keys(emos).length > 0) {
+    const top = Object.entries(emos).sort((a,b) => b[1]-a[1])[0][0];
+    if (EMO_TO_FACE[top]) return EMO_TO_FACE[top];
+  }
+
+  return 'neutral';
+}
+
+/* ── Main analyze ────────────────────────────────────────── */
+async function analyze() {
+  const text = document.getElementById('textInput').value.trim();
+  if (!text) { showToast('Please enter some text to analyze.'); return; }
+
+  document.getElementById('statusBar').textContent = '⏳ Analyzing…';
+
+  let data;
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    data = await res.json();
+  } catch(e) {
+    showToast('Server error. Is app.py running?');
+    return;
+  }
+  if (data.error) { showToast(data.error); return; }
+
+  // Scores
+  document.getElementById('posVal').textContent  = data.positive + '%';
+  document.getElementById('neuVal').textContent  = data.neutral  + '%';
+  document.getElementById('negVal').textContent  = data.negative + '%';
+  document.getElementById('compVal').textContent = data.compound;
+
+  setBar('posBarFill', 'posBar', data.positive);
+  setBar('neuBarFill', 'neuBar', data.neutral);
+  setBar('negBarFill', 'negBar', data.negative);
+
+  // Overall badge
+  const badge = document.getElementById('overallBadge');
+  const BADGE_MAP = {
+    Positive: ['✅ Positive', 'badge-positive'],
+    Neutral:  ['➖ Neutral',  'badge-neutral'],
+    Negative: ['❌ Negative', 'badge-negative']
+  };
+  badge.className   = 'overall-badge ' + BADGE_MAP[data.overall][1];
+  badge.textContent = BADGE_MAP[data.overall][0];
+
+  // ── Face ──────────────────────────────────────────────────
+  const compound = parseFloat(data.compound);
+  const emos     = data.emotions   || {};
+  const topEmo   = data.top_emotion || '';
+  const faceKey  = pickFace(compound, emos, topEmo);
+  applyFace(faceKey);
+
+  // ── Emotion chips ─────────────────────────────────────────
+  const chips = document.getElementById('emotionChips');
+  if (Object.keys(emos).length === 0) {
+    chips.innerHTML = '<span style="color:var(--muted);font-size:.82rem">No specific emotions detected</span>';
+  } else {
+    chips.innerHTML = Object.entries(emos)
+      .sort((a,b) => b[1]-a[1])
+      .slice(0, 12)
+      .map(([e, c]) => {
+        const col = CHIP_COLOR[e] || '#6c63ff';
+        return `<span class="chip">
+          <span class="chip-dot" style="background:${col};box-shadow:0 0 5px ${col}"></span>
+          ${e}<span class="chip-count">&nbsp;×${c}</span>
+        </span>`;
+      }).join('');
+  }
+
+  document.getElementById('resultsCard').classList.add('visible');
+  document.getElementById('statusBar').textContent = '✅ Analysis complete.';
+}
+
+function setBar(fillId, labelId, val) {
+  document.getElementById(fillId).style.width  = val + '%';
+  document.getElementById(labelId).textContent = val + '%';
+}
+
+function clearAll() {
+  document.getElementById('textInput').value = '';
+  document.getElementById('resultsCard').classList.remove('visible');
+  document.getElementById('statusBar').textContent = 'Ready to analyze text sentiment';
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  Object.assign(t.style, {
+    position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)',
+    background:'rgba(231,76,60,.92)', color:'#fff', padding:'10px 22px',
+    borderRadius:'50px', fontSize:'.88rem', fontWeight:'600',
+    backdropFilter:'blur(10px)', zIndex:'999'
+  });
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// Ctrl+Enter shortcut
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') analyze();
+});
+</script>
+
+</body>
+</html>
