@@ -311,4 +311,12 @@ if __name__ == '__main__':
     # Load model in background so Flask starts immediately
     t = threading.Thread(target=load_model_async, daemon=True)
     t.start()
-    app.run(debug=False, port=5000, threaded=True)
+
+    port = int(os.environ.get("PORT", 10000))
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        threaded=True
+    )
