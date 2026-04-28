@@ -250,26 +250,39 @@ def model_status_api():
     })
 
 
-# Camera APIs
 @app.route('/api/camera/start', methods=['POST'])
 def camera_start():
     global webcam, is_running
+
+    # Detect cloud environment (Render / Railway / etc.)
+    if os.environ.get("RENDER") or os.environ.get("PORT"):
+        return jsonify({
+            "status": "disabled",
+            "message": "Camera not available on cloud server"
+        })
+
     if is_running:
         return jsonify({'status': 'already running'})
 
     cam = cv2.VideoCapture(config.DEFAULT_CAMERA_INDEX)
+
     if not cam.isOpened():
         return jsonify({'error': 'Cannot open webcam'}), 500
 
     # Set resolution
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cam.set(cv2.CAP_PROP_FPS, 30)
 
     with lock:
         webcam = cam
+
     is_running = True
-    return jsonify({'status': 'started', 'model': model_status})
+
+    return jsonify({
+        'status': 'started',
+        'model': model_status
+    })
 
 
 @app.route('/api/camera/stop', methods=['POST'])
