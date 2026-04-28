@@ -305,7 +305,9 @@ def camera_stats():
         'model':      model_status
     })
 
-
+@app.route("/health")
+def health():
+    return "ok", 200
 # ── Startup ──────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     # Load model in background so Flask starts immediately
